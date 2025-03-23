@@ -4,6 +4,8 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/Suhaibinator/postalclient-go)](https://goreportcard.com/report/github.com/Suhaibinator/postalclient-go)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Coverage](https://img.shields.io/badge/coverage-92.6%25-brightgreen.svg)](https://github.com/Suhaibinator/postalclient-go)
+[![Tests](https://github.com/Suhaibinator/postalclient-go/actions/workflows/tests.yml/badge.svg)](https://github.com/Suhaibinator/postalclient-go/actions/workflows/tests.yml)
+[![Security](https://github.com/Suhaibinator/postalclient-go/actions/workflows/security.yml/badge.svg)](https://github.com/Suhaibinator/postalclient-go/actions/workflows/security.yml)
 
 A comprehensive Go client library for the [Postal](https://github.com/postalserver/postal) API. This SDK provides a simple, idiomatic, and well-documented way to interact with the Postal API from Go applications.
 
@@ -271,13 +273,15 @@ For more information about the Postal API, see the [official documentation](http
 
 This project uses GitHub Actions for continuous integration and delivery:
 
-- **CI**: Runs tests, linting, and code formatting checks on every push and pull request
+- **CI**: Runs linting and code formatting checks on every push and pull request
+- **Tests**: Runs unit tests and generates code coverage reports
 - **Release**: Automates the release process when a new tag is pushed
 - **Security**: Scans dependencies for vulnerabilities and checks for outdated packages
 
 ### Status
 
 [![CI](https://github.com/Suhaibinator/postalclient-go/actions/workflows/ci.yml/badge.svg)](https://github.com/Suhaibinator/postalclient-go/actions/workflows/ci.yml)
+[![Tests](https://github.com/Suhaibinator/postalclient-go/actions/workflows/tests.yml/badge.svg)](https://github.com/Suhaibinator/postalclient-go/actions/workflows/tests.yml)
 [![Security](https://github.com/Suhaibinator/postalclient-go/actions/workflows/security.yml/badge.svg)](https://github.com/Suhaibinator/postalclient-go/actions/workflows/security.yml)
 
 ## Contributing

@@ -26,7 +26,7 @@ func TestGetMessage(t *testing.T) {
 		// Write response
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{
+		_, _ = w.Write([]byte(`{
 			"status": "success",
 			"time": 0.123,
 			"flags": {},
@@ -64,7 +64,7 @@ func TestGetMessageError(t *testing.T) {
 		// Write error response
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{
+		_, _ = w.Write([]byte(`{
 			"status": "error",
 			"time": 0.123,
 			"flags": {},
@@ -97,7 +97,7 @@ func TestGetMessageUnmarshalError(t *testing.T) {
 		// Write invalid JSON response
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{
+		_, _ = w.Write([]byte(`{
 			"status": "success",
 			"time": 0.123,
 			"flags": {},
@@ -138,7 +138,7 @@ func TestGetMessageDeliveries(t *testing.T) {
 		// Write response
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{
+		_, _ = w.Write([]byte(`{
 			"status": "success",
 			"time": 0.123,
 			"flags": {},
@@ -193,7 +193,7 @@ func TestGetMessageDeliveriesError(t *testing.T) {
 		// Write error response
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{
+		_, _ = w.Write([]byte(`{
 			"status": "error",
 			"time": 0.123,
 			"flags": {},
@@ -226,7 +226,7 @@ func TestGetMessageDeliveriesUnmarshalError(t *testing.T) {
 		// Write invalid JSON response
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{
+		_, _ = w.Write([]byte(`{
 			"status": "success",
 			"time": 0.123,
 			"flags": {},
@@ -281,7 +281,7 @@ func TestSendMessage(t *testing.T) {
 		// Write response
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{
+		_, _ = w.Write([]byte(`{
 			"status": "success",
 			"time": 0.123,
 			"flags": {},
@@ -327,7 +327,7 @@ func TestSendMessageError(t *testing.T) {
 		// Write error response
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{
+		_, _ = w.Write([]byte(`{
 			"status": "parameter-error",
 			"time": 0.123,
 			"flags": {},
@@ -367,7 +367,7 @@ func TestSendMessageUnmarshalError(t *testing.T) {
 		// Write invalid JSON response
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{
+		_, _ = w.Write([]byte(`{
 			"status": "success",
 			"time": 0.123,
 			"flags": {},
@@ -430,7 +430,7 @@ func TestSendRaw(t *testing.T) {
 		// Write response
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{
+		_, _ = w.Write([]byte(`{
 			"status": "success",
 			"time": 0.123,
 			"flags": {},
@@ -475,7 +475,7 @@ func TestSendRawError(t *testing.T) {
 		// Write error response
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{
+		_, _ = w.Write([]byte(`{
 			"status": "parameter-error",
 			"time": 0.123,
 			"flags": {},
@@ -514,7 +514,7 @@ func TestSendRawUnmarshalError(t *testing.T) {
 		// Write invalid JSON response
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{
+		_, _ = w.Write([]byte(`{
 			"status": "success",
 			"time": 0.123,
 			"flags": {},

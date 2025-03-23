@@ -72,7 +72,7 @@ func TestClientDo(t *testing.T) {
 		// Write response
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{
+		_, _ = w.Write([]byte(`{
 			"status": "success",
 			"time": 0.123,
 			"flags": {},
@@ -107,7 +107,7 @@ func TestClientDoError(t *testing.T) {
 		// Write error response
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{
+		_, _ = w.Write([]byte(`{
 			"status": "error",
 			"time": 0.123,
 			"flags": {},
@@ -149,7 +149,7 @@ func TestClientDoHTTPError(t *testing.T) {
 		// Write error response
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte(`{
+		_, _ = w.Write([]byte(`{
 			"status": "error",
 			"time": 0.123,
 			"flags": {},
@@ -295,7 +295,7 @@ func TestClientDoReadBodyError(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		// Write a partial response and then hijack the connection to close it
-		w.Write([]byte(`{"status":"success","time":0.123,"flags":{}`))
+		_, _ = w.Write([]byte(`{"status":"success","time":0.123,"flags":{}`))
 		if hj, ok := w.(http.Hijacker); ok {
 			conn, _, _ := hj.Hijack()
 			conn.Close()
@@ -318,7 +318,7 @@ func TestClientDoUnmarshalResponseError(t *testing.T) {
 		// Write invalid JSON response
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"status":"success","time":0.123,"flags":{},"data":invalid-json}`))
+		_, _ = w.Write([]byte(`{"status":"success","time":0.123,"flags":{},"data":invalid-json}`))
 	}))
 	defer server.Close()
 
@@ -344,7 +344,7 @@ func TestClientDoUnmarshalErrorResponseError(t *testing.T) {
 		// Write invalid JSON error response
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"status":"error","time":0.123,"flags":{},"data":invalid-json}`))
+		_, _ = w.Write([]byte(`{"status":"error","time":0.123,"flags":{},"data":invalid-json}`))
 	}))
 	defer server.Close()
 
@@ -370,7 +370,7 @@ func TestClientDoHTTPErrorUnmarshalError(t *testing.T) {
 		// Write invalid JSON error response
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte(`{"status":"error","time":0.123,"flags":{},"data":invalid-json}`))
+		_, _ = w.Write([]byte(`{"status":"error","time":0.123,"flags":{},"data":invalid-json}`))
 	}))
 	defer server.Close()
 

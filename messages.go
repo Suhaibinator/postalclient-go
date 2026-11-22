@@ -4,6 +4,7 @@
 package postalclient
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -12,24 +13,31 @@ import (
 
 // GetMessage retrieves details about a message with the given ID.
 //
-// This method calls the /messages/message endpoint to retrieve information
-// about a specific message, including its status, content, and metadata.
+// This method calls the /messages/message endpoint. The ID is the numeric
+// per-recipient message ID returned in SendMessageResponse.Messages, not the
+// Message-ID string. Without expansions Postal returns only the ID and token;
+// pass expansion names (see the models.Expansion* constants) to populate the
+// other fields of models.Message.
 //
 // Example:
 //
-//	message, err := client.GetMessage(123)
+//	message, err := client.GetMessage(ctx, 123,
+//	    models.ExpansionStatus, models.ExpansionDetails)
 //	if err != nil {
 //	    log.Fatalf("Error getting message: %v", err)
 //	}
-//	fmt.Printf("Message details - ID: %d, Token: %s\n", message.ID, message.Token)
-func (c *Client) GetMessage(id int) (*models.Message, error) {
+//	fmt.Printf("Message %d is %s\n", message.ID, message.Status.Status)
+func (c *Client) GetMessage(ctx context.Context, id int, expansions ...string) (*models.Message, error) {
 	// Create the request body with the message ID
 	body := map[string]interface{}{
 		"id": id,
 	}
+	if len(expansions) > 0 {
+		body["_expansions"] = expansions
+	}
 
 	// Make the request to the API
-	resp, err := c.post("/messages/message", body)
+	resp, err := c.post(ctx, "/messages/message", body)
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +59,7 @@ func (c *Client) GetMessage(id int) (*models.Message, error) {
 //
 // Example:
 //
-//	deliveries, err := client.GetMessageDeliveries(123)
+//	deliveries, err := client.GetMessageDeliveries(ctx, 123)
 //	if err != nil {
 //	    log.Fatalf("Error getting message deliveries: %v", err)
 //	}
@@ -59,14 +67,14 @@ func (c *Client) GetMessage(id int) (*models.Message, error) {
 //	for i, delivery := range deliveries {
 //	    fmt.Printf("Delivery %d - Status: %s\n", i+1, delivery.Status)
 //	}
-func (c *Client) GetMessageDeliveries(id int) ([]models.Delivery, error) {
+func (c *Client) GetMessageDeliveries(ctx context.Context, id int) ([]models.Delivery, error) {
 	// Create the request body with the message ID
 	body := map[string]interface{}{
 		"id": id,
 	}
 
 	// Make the request to the API
-	resp, err := c.post("/messages/deliveries", body)
+	resp, err := c.post(ctx, "/messages/deliveries", body)
 	if err != nil {
 		return nil, err
 	}
@@ -95,25 +103,16 @@ func (c *Client) GetMessageDeliveries(id int) ([]models.Delivery, error) {
 //	    Subject:   "Hello from Postal API",
 //	    PlainBody: "This is a test email sent using the Postal API Go client.",
 //	}
-//	resp, err := client.SendMessage(req)
+//	resp, err := client.SendMessage(ctx, req)
 //	if err != nil {
 //	    log.Fatalf("Error sending message: %v", err)
 //	}
-//	fmt.Printf("Message sent! ID: %d, Token: %s\n", resp.MessageID, resp.Token)
-func (c *Client) SendMessage(req *models.SendMessageRequest) (*models.SendMessageResponse, error) {
-	// Make the request to the API
-	resp, err := c.post("/send/message", req)
-	if err != nil {
-		return nil, err
-	}
-
-	// Unmarshal the response data into a SendMessageResponse struct
-	var sendResp models.SendMessageResponse
-	if err := json.Unmarshal(resp.Data, &sendResp); err != nil {
-		return nil, fmt.Errorf("error unmarshaling send response: %w", err)
-	}
-
-	return &sendResp, nil
+//	fmt.Printf("Message sent! Message-ID: %s\n", resp.MessageID)
+//	for rcpt, m := range resp.Messages {
+//	    fmt.Printf("  %s: ID %d, Token %s\n", rcpt, m.ID, m.Token)
+//	}
+func (c *Client) SendMessage(ctx context.Context, req *models.SendMessageRequest) (*models.SendMessageResponse, error) {
+	return c.send(ctx, "/send/message", req)
 }
 
 // SendRaw sends a raw RFC2822 message using the Postal API.
@@ -126,34 +125,36 @@ func (c *Client) SendMessage(req *models.SendMessageRequest) (*models.SendMessag
 //
 // Example:
 //
-//	rawMessage := `From: sender@yourdomain.com
-//	To: recipient@example.com
-//	Subject: Hello from Postal API
-//	Content-Type: text/plain; charset=utf-8
-//
-//	This is a test email sent using the Postal API Go client.`
-//
-//	encodedMessage := base64.StdEncoding.EncodeToString([]byte(rawMessage))
+//	rawMessage := "From: sender@yourdomain.com\r\n" +
+//	    "To: recipient@example.com\r\n" +
+//	    "Subject: Hello from Postal API\r\n" +
+//	    "Content-Type: text/plain; charset=utf-8\r\n" +
+//	    "\r\n" +
+//	    "This is a test email sent using the Postal API Go client.\r\n"
 //
 //	req := &models.SendRawRequest{
 //	    MailFrom: "sender@yourdomain.com",
 //	    RcptTo:   []string{"recipient@example.com"},
-//	    Data:     encodedMessage,
+//	    Data:     base64.StdEncoding.EncodeToString([]byte(rawMessage)),
 //	}
 //
-//	resp, err := client.SendRaw(req)
+//	resp, err := client.SendRaw(ctx, req)
 //	if err != nil {
 //	    log.Fatalf("Error sending raw message: %v", err)
 //	}
-//	fmt.Printf("Raw message sent! ID: %d, Token: %s\n", resp.MessageID, resp.Token)
-func (c *Client) SendRaw(req *models.SendRawRequest) (*models.SendMessageResponse, error) {
-	// Make the request to the API
-	resp, err := c.post("/send/raw", req)
+//	fmt.Printf("Raw message sent! Message-ID: %s\n", resp.MessageID)
+func (c *Client) SendRaw(ctx context.Context, req *models.SendRawRequest) (*models.SendMessageResponse, error) {
+	return c.send(ctx, "/send/raw", req)
+}
+
+// send posts a send request and decodes the response that /send/message and
+// /send/raw share.
+func (c *Client) send(ctx context.Context, path string, req interface{}) (*models.SendMessageResponse, error) {
+	resp, err := c.post(ctx, path, req)
 	if err != nil {
 		return nil, err
 	}
 
-	// Unmarshal the response data into a SendMessageResponse struct
 	var sendResp models.SendMessageResponse
 	if err := json.Unmarshal(resp.Data, &sendResp); err != nil {
 		return nil, fmt.Errorf("error unmarshaling send response: %w", err)

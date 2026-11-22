@@ -15,6 +15,7 @@ A comprehensive Go client library for the [Postal](https://github.com/postalserv
 - **Type Safety**: Strongly typed request and response structures
 - **Comprehensive Documentation**: Detailed GoDoc comments and examples
 - **Error Handling**: Robust error handling with detailed error information
+- **Context Support**: Every method takes a `context.Context` for cancellation and deadlines
 - **Customization**: Configurable client with options for base URL and timeout
 - **Testing**: Extensive test coverage
 
@@ -30,19 +31,23 @@ go get github.com/Suhaibinator/postalclient-go
 package main
 
 import (
+    "context"
     "fmt"
     "log"
+    "time"
 
     "github.com/Suhaibinator/postalclient-go"
     "github.com/Suhaibinator/postalclient-go/models"
 )
 
 func main() {
-    // Create a client
-    client := postalclient.NewClient("your-api-key")
+    ctx := context.Background()
+
+    // Create a client; BaseURL must end in /api/v1
+    client := postalclient.NewClientWithOptions("your-api-key", "https://postal.yourdomain.com/api/v1", 30*time.Second)
 
     // Send a message
-    resp, err := client.SendMessage(&models.SendMessageRequest{
+    resp, err := client.SendMessage(ctx, &models.SendMessageRequest{
         To:        []string{"recipient@example.com"},
         From:      "sender@yourdomain.com",
         Subject:   "Hello from Postal API",
@@ -52,7 +57,10 @@ func main() {
         log.Fatalf("Error sending message: %v", err)
     }
 
-    fmt.Printf("Message sent! ID: %d, Token: %s\n", resp.MessageID, resp.Token)
+    fmt.Printf("Message sent! Message-ID: %s\n", resp.MessageID)
+    for rcpt, m := range resp.Messages {
+        fmt.Printf("  %s: ID %d, Token %s\n", rcpt, m.ID, m.Token)
+    }
 }
 ```
 
@@ -66,7 +74,8 @@ import (
     "github.com/Suhaibinator/postalclient-go"
 )
 
-// Create a client with default options
+// Create a client with default options. NewClient uses a placeholder
+// base URL; set client.BaseURL to your server's URL ending in /api/v1.
 client := postalclient.NewClient("your-api-key")
 
 // Or with custom options
@@ -81,8 +90,11 @@ client := postalclient.NewClientWithOptions(
 
 ```go
 import (
+    "context"
     "fmt"
     "log"
+    "time"
+
     "github.com/Suhaibinator/postalclient-go"
     "github.com/Suhaibinator/postalclient-go/models"
 )
@@ -102,29 +114,38 @@ req := &models.SendMessageRequest{
     },
 }
 
-// Send the message
-resp, err := client.SendMessage(req)
+// Send the message, giving up after 10 seconds
+ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+defer cancel()
+resp, err := client.SendMessage(ctx, req)
 if err != nil {
     log.Fatalf("Error sending message: %v", err)
 }
 
-// Use the response
-fmt.Printf("Message sent! ID: %d, Token: %s\n", resp.MessageID, resp.Token)
+// MessageID is the RFC 5322 Message-ID string. Postal creates one message
+// per recipient; Messages maps each recipient to its numeric ID and token.
+fmt.Printf("Message sent! Message-ID: %s\n", resp.MessageID)
+for rcpt, m := range resp.Messages {
+    fmt.Printf("  %s: ID %d, Token %s\n", rcpt, m.ID, m.Token)
+}
 ```
 
 ### Sending a Raw RFC2822 Message
 
 ```go
 import (
+    "context"
     "encoding/base64"
     "fmt"
     "log"
+
     "github.com/Suhaibinator/postalclient-go"
     "github.com/Suhaibinator/postalclient-go/models"
 )
 
 // Create a client
 client := postalclient.NewClient("your-api-key")
+ctx := context.Background()
 
 // Create a raw RFC2822 message
 rawMessage := `From: sender@yourdomain.com
@@ -146,35 +167,41 @@ req := &models.SendRawRequest{
 }
 
 // Send the raw message
-resp, err := client.SendRaw(req)
+resp, err := client.SendRaw(ctx, req)
 if err != nil {
     log.Fatalf("Error sending raw message: %v", err)
 }
 
 // Use the response
-fmt.Printf("Raw message sent! ID: %d, Token: %s\n", resp.MessageID, resp.Token)
+fmt.Printf("Raw message sent! Message-ID: %s\n", resp.MessageID)
 ```
 
 ### Getting Message Details
 
 ```go
 import (
+    "context"
     "fmt"
     "log"
+
     "github.com/Suhaibinator/postalclient-go"
+    "github.com/Suhaibinator/postalclient-go/models"
 )
 
 // Create a client
 client := postalclient.NewClient("your-api-key")
+ctx := context.Background()
 
-// Get message details
-message, err := client.GetMessage(messageID)
+// Get message details. messageID is a numeric ID from resp.Messages.
+// Without expansions Postal returns only the ID and token.
+message, err := client.GetMessage(ctx, messageID,
+    models.ExpansionStatus, models.ExpansionPlainBody, models.ExpansionHTMLBody, models.ExpansionHeaders)
 if err != nil {
     log.Fatalf("Error getting message: %v", err)
 }
 
 // Use the message
-fmt.Printf("Message details - ID: %d, Token: %s\n", message.ID, message.Token)
+fmt.Printf("Message details - ID: %d, Token: %s, Status: %s\n", message.ID, message.Token, message.Status.Status)
 
 // Access message content if available
 if message.PlainBody != "" {
@@ -188,8 +215,8 @@ if message.HTMLBody != "" {
 // Access message headers if available
 if len(message.Headers) > 0 {
     fmt.Println("Headers:")
-    for key, value := range message.Headers {
-        fmt.Printf("  %s: %s\n", key, value)
+    for name, values := range message.Headers {
+        fmt.Printf("  %s: %v\n", name, values)
     }
 }
 ```
@@ -198,16 +225,20 @@ if len(message.Headers) > 0 {
 
 ```go
 import (
+    "context"
     "fmt"
     "log"
+    "time"
+
     "github.com/Suhaibinator/postalclient-go"
 )
 
 // Create a client
 client := postalclient.NewClient("your-api-key")
+ctx := context.Background()
 
 // Get message deliveries
-deliveries, err := client.GetMessageDeliveries(messageID)
+deliveries, err := client.GetMessageDeliveries(ctx, messageID)
 if err != nil {
     log.Fatalf("Error getting message deliveries: %v", err)
 }
@@ -226,22 +257,29 @@ for i, delivery := range deliveries {
 
 ## Error Handling
 
-The client returns detailed error information when API requests fail:
+The Postal API answers HTTP 200 even when a request fails and reports the failure in the
+response body. The client turns those responses into a `*postalclient.Error`, with the
+error code and message from the response's `data`:
 
 ```go
-resp, err := client.SendMessage(req)
+resp, err := client.SendMessage(ctx, req)
 if err != nil {
-    // Check if it's a Postal API error
-    if apiErr, ok := err.(*postalclient.Error); ok {
-        fmt.Printf("API Error: %s - %s\n", apiErr.Status, apiErr.Message)
-        // Handle specific error types
-        if apiErr.Status == "parameter-error" {
-            // Handle parameter validation errors
-        } else if apiErr.Status == "error" {
-            // Handle general API errors
-        }
-    } else {
-        // Handle other errors (network, parsing, etc.)
+    var apiErr *postalclient.Error
+    var httpErr *postalclient.HTTPError
+    switch {
+    case errors.As(err, &apiErr):
+        // apiErr.Status is "error" or "parameter-error".
+        // apiErr.ErrorCode is e.g. "UnauthenticatedFromAddress", "InvalidServerAPIKey"
+        // or "MessageNotFound" (empty for parameter errors).
+        fmt.Printf("API error %s: %s\n", apiErr.ErrorCode, apiErr.Message)
+    case errors.As(err, &httpErr):
+        // A non-200 response that is not from the Postal API, such as a proxy
+        // error page or a 404 from a BaseURL that does not end in /api/v1.
+        fmt.Printf("HTTP %d\n", httpErr.StatusCode)
+    case errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
+        // The context ended before the request finished.
+    default:
+        // Network or decoding errors.
         fmt.Printf("Error: %v\n", err)
     }
     return
@@ -255,15 +293,11 @@ See the [examples](./examples) directory for complete examples of how to use thi
 - [Sending a Message](./examples/message/send_message.go)
 - [Sending a Raw RFC2822 Message](./examples/raw/send_raw.go)
 
-To run the examples:
+Each example package exports a `SendExample(apiKey, baseURL string)` function to call from your own program.
 
-```bash
-# Send a regular message
-go run examples/main.go --api-key=your-api-key --example=message
+## Changes
 
-# Send a raw RFC2822 message
-go run examples/main.go --api-key=your-api-key --example=raw
-```
+See [CHANGELOG.md](CHANGELOG.md). The next release contains breaking API changes; read it before upgrading from v1.0.0.
 
 ## API Documentation
 

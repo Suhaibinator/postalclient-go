@@ -15,15 +15,20 @@
 //	    Subject:   "Hello from Postal API",
 //	    PlainBody: "This is a test email",
 //	}
-//	resp, err := client.SendMessage(req)
+//	resp, err := client.SendMessage(ctx, req)
+//
+// Every API method takes a context.Context for cancellation and deadlines.
+// HTTPClient's timeout still applies as well.
 package postalclient
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -42,6 +47,7 @@ const (
 type Client struct {
 	// BaseURL is the base URL for the Postal API.
 	// This should include the protocol, domain, and API version path.
+	// A trailing slash is ignored.
 	// Example: "https://postal.yourdomain.com/api/v1"
 	BaseURL string
 
@@ -53,6 +59,7 @@ type Client struct {
 	// HTTPClient is the HTTP client used to make requests.
 	// This can be customized to add features like request tracing,
 	// custom transport options, or different timeout values.
+	// If nil, http.DefaultClient is used.
 	HTTPClient *http.Client
 }
 
@@ -109,6 +116,11 @@ type Response struct {
 
 // Error represents an error response from the Postal API.
 // It implements the error interface for easy error handling.
+//
+// The Postal legacy API answers HTTP 200 for failed requests and reports the
+// failure in the JSON body: "status" is "error" (with "data.code" and,
+// usually, "data.message") or "parameter-error" (with "data.message").
+// ErrorCode and Message are copied from those fields.
 type Error struct {
 	// Status indicates the result of the request, typically "error" or "parameter-error".
 	Status string `json:"status"`
@@ -119,30 +131,72 @@ type Error struct {
 	// Flags contains additional metadata about the request.
 	Flags json.RawMessage `json:"flags"`
 
-	// Data contains additional error details as JSON.
+	// Data contains the raw error details as JSON. For "InvalidServerAPIKey"
+	// Postal echoes the rejected key in data.token, so avoid logging Data.
 	Data json.RawMessage `json:"data"`
 
-	// ErrorCode is a machine-readable code identifying the error.
-	ErrorCode string `json:"error_code,omitempty"`
+	// ErrorCode is the machine-readable code from data.code, such as
+	// "InvalidServerAPIKey", "UnauthenticatedFromAddress" or "MessageNotFound".
+	// It is empty for parameter errors.
+	ErrorCode string `json:"-"`
 
-	// Message is a human-readable description of the error.
-	Message string `json:"message,omitempty"`
+	// Message is the human-readable description from data.message.
+	// It may be empty; some errors (e.g. "ServerSuspended") carry only a code.
+	Message string `json:"-"`
 }
 
 // Error returns a string representation of the error.
 // This implements the error interface.
 func (e *Error) Error() string {
+	if e.ErrorCode != "" {
+		return fmt.Sprintf("postal API error: %s (%s) - %s", e.Status, e.ErrorCode, e.Message)
+	}
 	return fmt.Sprintf("postal API error: %s - %s", e.Status, e.Message)
 }
+
+// newError builds an Error from a non-success response envelope, copying
+// data.code and data.message into ErrorCode and Message.
+func newError(r *Response) *Error {
+	apiErr := &Error{Status: r.Status, Time: r.Time, Flags: r.Flags, Data: r.Data}
+	var details struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	}
+	if json.Unmarshal(r.Data, &details) == nil {
+		apiErr.ErrorCode = details.Code
+		apiErr.Message = details.Message
+	}
+	return apiErr
+}
+
+// HTTPError is returned when the server answers with a non-200 HTTP status
+// and a body that is not a Postal API response. The Postal legacy API always
+// answers 200, so this usually means a proxy error page or a 404 from a
+// BaseURL that does not point at the API (it must end in "/api/v1").
+type HTTPError struct {
+	// StatusCode is the HTTP status code of the response.
+	StatusCode int
+
+	// Body holds up to the first 64 KiB of the response body.
+	Body string
+}
+
+// Error returns a string representation of the error.
+func (e *HTTPError) Error() string {
+	return fmt.Sprintf("postal API error: unexpected HTTP status %d %s", e.StatusCode, http.StatusText(e.StatusCode))
+}
+
+// maxErrorBodySize bounds how much of a non-200 response body is read.
+const maxErrorBodySize = 64 << 10
 
 // do performs an HTTP request and returns the response.
 // It handles the details of creating the request, setting headers,
 // performing the request, and parsing the response.
 //
 // This is an internal method used by other client methods.
-func (c *Client) do(method, path string, body interface{}) (*Response, error) {
+func (c *Client) do(ctx context.Context, method, path string, body interface{}) (*Response, error) {
 	// Create the request URL by combining the base URL and path
-	url := fmt.Sprintf("%s%s", c.BaseURL, path)
+	url := strings.TrimRight(c.BaseURL, "/") + path
 
 	// Marshal the body to JSON if it's not nil
 	var bodyReader io.Reader
@@ -155,7 +209,7 @@ func (c *Client) do(method, path string, body interface{}) (*Response, error) {
 	}
 
 	// Create the HTTP request with the specified method, URL, and body
-	req, err := http.NewRequest(method, url, bodyReader)
+	req, err := http.NewRequestWithContext(ctx, method, url, bodyReader)
 	if err != nil {
 		return nil, fmt.Errorf("error creating request: %w", err)
 	}
@@ -166,25 +220,31 @@ func (c *Client) do(method, path string, body interface{}) (*Response, error) {
 	req.Header.Set("X-Server-API-Key", c.APIKey)
 
 	// Perform the request using the client's HTTP client
-	resp, err := c.HTTPClient.Do(req)
+	httpClient := c.HTTPClient
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("error performing request: %w", err)
 	}
 	defer resp.Body.Close()
 
+	// The Postal API always answers 200; anything else comes from somewhere
+	// else (a proxy, or a BaseURL that does not point at the API).
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodySize))
+		var apiResp Response
+		if json.Unmarshal(respBody, &apiResp) == nil && apiResp.Status != "" {
+			return nil, newError(&apiResp)
+		}
+		return nil, &HTTPError{StatusCode: resp.StatusCode, Body: string(respBody)}
+	}
+
 	// Read the entire response body
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("error reading response body: %w", err)
-	}
-
-	// Check if the HTTP status code indicates an error
-	if resp.StatusCode != http.StatusOK {
-		var apiError Error
-		if err := json.Unmarshal(respBody, &apiError); err != nil {
-			return nil, fmt.Errorf("error unmarshaling error response: %w", err)
-		}
-		return nil, &apiError
 	}
 
 	// Unmarshal the response body into a Response struct
@@ -193,13 +253,9 @@ func (c *Client) do(method, path string, body interface{}) (*Response, error) {
 		return nil, fmt.Errorf("error unmarshaling response: %w", err)
 	}
 
-	// Check if the API response status indicates an error
+	// The API reports failures in the status field, not the HTTP status code.
 	if apiResp.Status != "success" {
-		var apiError Error
-		if err := json.Unmarshal(respBody, &apiError); err != nil {
-			return nil, fmt.Errorf("error unmarshaling error response: %w", err)
-		}
-		return nil, &apiError
+		return nil, newError(&apiResp)
 	}
 
 	return &apiResp, nil
@@ -209,6 +265,6 @@ func (c *Client) do(method, path string, body interface{}) (*Response, error) {
 // It's a convenience wrapper around the do method.
 //
 // This is an internal method used by other client methods.
-func (c *Client) post(path string, body interface{}) (*Response, error) {
-	return c.do(http.MethodPost, path, body)
+func (c *Client) post(ctx context.Context, path string, body interface{}) (*Response, error) {
+	return c.do(ctx, http.MethodPost, path, body)
 }

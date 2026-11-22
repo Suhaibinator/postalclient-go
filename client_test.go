@@ -1,13 +1,17 @@
 package postalclient
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Suhaibinator/postalclient-go/models"
 )
 
 func TestNewClient(t *testing.T) {
@@ -86,7 +90,7 @@ func TestClientDo(t *testing.T) {
 	client.BaseURL = server.URL
 
 	// Make request
-	resp, err := client.post("/test", map[string]string{"test": "data"})
+	resp, err := client.post(context.Background(), "/test", map[string]string{"test": "data"})
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -111,9 +115,7 @@ func TestClientDoError(t *testing.T) {
 			"status": "error",
 			"time": 0.123,
 			"flags": {},
-			"data": {"error": "test error"},
-			"error_code": "test-error",
-			"message": "Test error message"
+			"data": {"code": "TestError", "message": "Test error message"}
 		}`))
 	}))
 	defer server.Close()
@@ -123,7 +125,7 @@ func TestClientDoError(t *testing.T) {
 	client.BaseURL = server.URL
 
 	// Make request
-	_, err := client.post("/test", nil)
+	_, err := client.post(context.Background(), "/test", nil)
 	if err == nil {
 		t.Fatal("Expected error, got nil")
 	}
@@ -140,6 +142,10 @@ func TestClientDoError(t *testing.T) {
 
 	if apiErr.Message != "Test error message" {
 		t.Errorf("Expected error message to be 'Test error message', got %s", apiErr.Message)
+	}
+
+	if apiErr.ErrorCode != "TestError" {
+		t.Errorf("Expected error code to be 'TestError', got %s", apiErr.ErrorCode)
 	}
 }
 
@@ -153,9 +159,7 @@ func TestClientDoHTTPError(t *testing.T) {
 			"status": "error",
 			"time": 0.123,
 			"flags": {},
-			"data": {"error": "test error"},
-			"error_code": "test-error",
-			"message": "Test error message"
+			"data": {"code": "TestError", "message": "Test error message"}
 		}`))
 	}))
 	defer server.Close()
@@ -165,7 +169,7 @@ func TestClientDoHTTPError(t *testing.T) {
 	client.BaseURL = server.URL
 
 	// Make request
-	_, err := client.post("/test", nil)
+	_, err := client.post(context.Background(), "/test", nil)
 	if err == nil {
 		t.Fatal("Expected error, got nil")
 	}
@@ -182,6 +186,10 @@ func TestClientDoHTTPError(t *testing.T) {
 
 	if apiErr.Message != "Test error message" {
 		t.Errorf("Expected error message to be 'Test error message', got %s", apiErr.Message)
+	}
+
+	if apiErr.ErrorCode != "TestError" {
+		t.Errorf("Expected error code to be 'TestError', got %s", apiErr.ErrorCode)
 	}
 }
 
@@ -198,7 +206,7 @@ func TestErrorMethod(t *testing.T) {
 
 	// Test the Error method
 	errStr := apiErr.Error()
-	expected := "postal API error: error - Test error message"
+	expected := "postal API error: error (test-error) - Test error message"
 	if errStr != expected {
 		t.Errorf("Expected error string to be '%s', got '%s'", expected, errStr)
 	}
@@ -206,13 +214,14 @@ func TestErrorMethod(t *testing.T) {
 	// Test with empty message
 	apiErr.Message = ""
 	errStr = apiErr.Error()
-	expected = "postal API error: error - "
+	expected = "postal API error: error (test-error) - "
 	if errStr != expected {
 		t.Errorf("Expected error string to be '%s', got '%s'", expected, errStr)
 	}
 
 	// Test with different status
 	apiErr.Status = "parameter-error"
+	apiErr.ErrorCode = ""
 	apiErr.Message = "Invalid parameter"
 	errStr = apiErr.Error()
 	expected = "postal API error: parameter-error - Invalid parameter"
@@ -227,7 +236,7 @@ func TestClientDoRequestCreationError(t *testing.T) {
 	client.BaseURL = "http://invalid-url-with-\u007F-character"
 
 	// Make request
-	_, err := client.post("/test", nil)
+	_, err := client.post(context.Background(), "/test", nil)
 	if err == nil {
 		t.Fatal("Expected error, got nil")
 	}
@@ -251,7 +260,7 @@ func TestClientDoMarshalError(t *testing.T) {
 	}
 
 	// Make request
-	_, err := client.post("/test", badBody)
+	_, err := client.post(context.Background(), "/test", badBody)
 	if err == nil {
 		t.Fatal("Expected error, got nil")
 	}
@@ -270,7 +279,7 @@ func TestClientDoHTTPClientError(t *testing.T) {
 	}
 
 	// Make request
-	_, err := client.post("/test", nil)
+	_, err := client.post(context.Background(), "/test", nil)
 	if err == nil {
 		t.Fatal("Expected error, got nil")
 	}
@@ -309,7 +318,7 @@ func TestClientDoReadBodyError(t *testing.T) {
 
 	// Make request - this may not consistently produce a read error depending on timing
 	// so we'll skip checking the specific error
-	_, _ = client.post("/test", nil)
+	_, _ = client.post(context.Background(), "/test", nil)
 }
 
 func TestClientDoUnmarshalResponseError(t *testing.T) {
@@ -327,7 +336,7 @@ func TestClientDoUnmarshalResponseError(t *testing.T) {
 	client.BaseURL = server.URL
 
 	// Make request
-	_, err := client.post("/test", nil)
+	_, err := client.post(context.Background(), "/test", nil)
 	if err == nil {
 		t.Fatal("Expected error, got nil")
 	}
@@ -353,7 +362,7 @@ func TestClientDoUnmarshalErrorResponseError(t *testing.T) {
 	client.BaseURL = server.URL
 
 	// Make request
-	_, err := client.post("/test", nil)
+	_, err := client.post(context.Background(), "/test", nil)
 	if err == nil {
 		t.Fatal("Expected error, got nil")
 	}
@@ -379,13 +388,187 @@ func TestClientDoHTTPErrorUnmarshalError(t *testing.T) {
 	client.BaseURL = server.URL
 
 	// Make request
-	_, err := client.post("/test", nil)
+	_, err := client.post(context.Background(), "/test", nil)
 	if err == nil {
 		t.Fatal("Expected error, got nil")
 	}
 
-	// Check error message
-	if !strings.Contains(err.Error(), "error unmarshaling error response") {
-		t.Errorf("Expected error message to contain 'error unmarshaling error response', got '%s'", err.Error())
+	// A body that is not a Postal envelope surfaces as an HTTPError
+	var httpErr *HTTPError
+	if !errors.As(err, &httpErr) {
+		t.Fatalf("Expected error to be of type *HTTPError, got %T", err)
+	}
+	if httpErr.StatusCode != http.StatusInternalServerError {
+		t.Errorf("Expected status code 500, got %d", httpErr.StatusCode)
+	}
+}
+
+func TestContextCancellation(t *testing.T) {
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-r.Context().Done():
+		case <-release:
+		}
+	}))
+	defer server.Close()
+	defer close(release)
+
+	client := NewClient("test-api-key")
+	client.BaseURL = server.URL
+
+	calls := map[string]func(ctx context.Context) error{
+		"SendMessage": func(ctx context.Context) error {
+			_, err := client.SendMessage(ctx, &models.SendMessageRequest{To: []string{"a@example.com"}})
+			return err
+		},
+		"SendRaw": func(ctx context.Context) error {
+			_, err := client.SendRaw(ctx, &models.SendRawRequest{RcptTo: []string{"a@example.com"}})
+			return err
+		},
+		"GetMessage": func(ctx context.Context) error {
+			_, err := client.GetMessage(ctx, 1)
+			return err
+		},
+		"GetMessageDeliveries": func(ctx context.Context) error {
+			_, err := client.GetMessageDeliveries(ctx, 1)
+			return err
+		},
+	}
+	for name, call := range calls {
+		t.Run(name+"/deadline", func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+			defer cancel()
+			if err := call(ctx); !errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("Expected context.DeadlineExceeded, got %v", err)
+			}
+		})
+		t.Run(name+"/cancel", func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			time.AfterFunc(20*time.Millisecond, cancel)
+			if err := call(ctx); !errors.Is(err, context.Canceled) {
+				t.Fatalf("Expected context.Canceled, got %v", err)
+			}
+		})
+	}
+}
+
+func TestStatusErrorAtHTTP200(t *testing.T) {
+	// Postal answers 200 and echoes the rejected key in data.token
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"error","time":0.001,"flags":{},"data":{"message":"The API token provided in X-Server-API-Key was not valid.","token":"secret-key","code":"InvalidServerAPIKey"}}`))
+	}))
+	defer server.Close()
+
+	client := NewClient("secret-key")
+	client.BaseURL = server.URL
+
+	_, err := client.SendMessage(context.Background(), &models.SendMessageRequest{To: []string{"a@example.com"}})
+	var apiErr *Error
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("Expected *Error, got %T: %v", err, err)
+	}
+	if apiErr.Status != "error" {
+		t.Errorf("Expected status error, got %q", apiErr.Status)
+	}
+	if apiErr.ErrorCode != "InvalidServerAPIKey" {
+		t.Errorf("Expected code InvalidServerAPIKey, got %q", apiErr.ErrorCode)
+	}
+	if apiErr.Message != "The API token provided in X-Server-API-Key was not valid." {
+		t.Errorf("Unexpected message %q", apiErr.Message)
+	}
+	want := "postal API error: error (InvalidServerAPIKey) - The API token provided in X-Server-API-Key was not valid."
+	if err.Error() != want {
+		t.Errorf("Expected %q, got %q", want, err.Error())
+	}
+}
+
+func TestStatusErrorCodeOnly(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"status":"error","time":0.001,"flags":{},"data":{"code":"ServerSuspended"}}`))
+	}))
+	defer server.Close()
+
+	client := NewClient("test-api-key")
+	client.BaseURL = server.URL
+
+	_, err := client.GetMessageDeliveries(context.Background(), 1)
+	var apiErr *Error
+	if !errors.As(err, &apiErr) || apiErr.ErrorCode != "ServerSuspended" || apiErr.Message != "" {
+		t.Fatalf("Expected ServerSuspended *Error, got %T: %v", err, err)
+	}
+}
+
+func TestHTTPErrorNonJSONBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte("<html>502 Bad Gateway</html>"))
+	}))
+	defer server.Close()
+
+	client := NewClient("test-api-key")
+	client.BaseURL = server.URL
+
+	_, err := client.SendMessage(context.Background(), &models.SendMessageRequest{})
+	var httpErr *HTTPError
+	if !errors.As(err, &httpErr) {
+		t.Fatalf("Expected *HTTPError, got %T: %v", err, err)
+	}
+	if httpErr.StatusCode != http.StatusBadGateway || httpErr.Body != "<html>502 Bad Gateway</html>" {
+		t.Errorf("Unexpected HTTPError %+v", httpErr)
+	}
+	if want := "postal API error: unexpected HTTP status 502 Bad Gateway"; err.Error() != want {
+		t.Errorf("Expected %q, got %q", want, err.Error())
+	}
+}
+
+func TestHTTPErrorBodyIsBounded(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(strings.Repeat("x", 2*maxErrorBodySize)))
+	}))
+	defer server.Close()
+
+	client := NewClient("test-api-key")
+	client.BaseURL = server.URL
+
+	_, err := client.GetMessage(context.Background(), 1)
+	var httpErr *HTTPError
+	if !errors.As(err, &httpErr) {
+		t.Fatalf("Expected *HTTPError, got %T: %v", err, err)
+	}
+	if len(httpErr.Body) != maxErrorBodySize {
+		t.Errorf("Expected body of %d bytes, got %d", maxErrorBodySize, len(httpErr.Body))
+	}
+}
+
+func TestBaseURLTrailingSlash(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/messages/message" {
+			t.Errorf("Expected path /api/v1/messages/message, got %s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"status":"success","time":0.001,"flags":{},"data":{"id":1,"token":"t"}}`))
+	}))
+	defer server.Close()
+
+	for _, base := range []string{server.URL + "/api/v1", server.URL + "/api/v1/"} {
+		client := NewClientWithOptions("test-api-key", base, time.Second)
+		if _, err := client.GetMessage(context.Background(), 1); err != nil {
+			t.Errorf("BaseURL %q: unexpected error %v", base, err)
+		}
+	}
+}
+
+func TestNilHTTPClientUsesDefault(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"status":"success","time":0.001,"flags":{},"data":{"id":1,"token":"t"}}`))
+	}))
+	defer server.Close()
+
+	client := &Client{BaseURL: server.URL, APIKey: "test-api-key"}
+	if _, err := client.GetMessage(context.Background(), 1); err != nil {
+		t.Fatalf("Expected no error, got %v", err)
 	}
 }

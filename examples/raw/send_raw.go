@@ -1,9 +1,11 @@
 package raw
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/Suhaibinator/postalclient-go"
 	"github.com/Suhaibinator/postalclient-go/models"
@@ -38,30 +40,34 @@ This is a test email sent using the Postal API Go client with a raw RFC2822 mess
 		Data:     encodedMessage,
 	}
 
-	// Send the raw message
-	resp, err := client.SendRaw(req)
+	// Bound the requests with a deadline
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	resp, err := client.SendRaw(ctx, req)
 	if err != nil {
-		log.Fatalf("Error sending raw message: %v", err)
+		log.Fatalf("Error sending message: %v", err)
 	}
 
-	fmt.Printf("Raw message sent successfully! Message ID: %d, Token: %s\n", resp.MessageID, resp.Token)
+	fmt.Printf("Raw message sent successfully! Message-ID: %s\n", resp.MessageID)
 
-	// Get message details
-	message, err := client.GetMessage(resp.MessageID)
-	if err != nil {
-		log.Fatalf("Error getting message: %v", err)
-	}
+	// Postal creates one message per recipient; look each one up by its numeric ID
+	for rcpt, m := range resp.Messages {
+		message, err := client.GetMessage(ctx, m.ID, models.ExpansionStatus)
+		if err != nil {
+			log.Fatalf("Error getting message: %v", err)
+		}
 
-	fmt.Printf("Message details - ID: %d, Token: %s\n", message.ID, message.Token)
+		fmt.Printf("Message for %s - ID: %d, Token: %s, Status: %s\n", rcpt, message.ID, message.Token, message.Status.Status)
 
-	// Get message deliveries
-	deliveries, err := client.GetMessageDeliveries(resp.MessageID)
-	if err != nil {
-		log.Fatalf("Error getting message deliveries: %v", err)
-	}
+		deliveries, err := client.GetMessageDeliveries(ctx, m.ID)
+		if err != nil {
+			log.Fatalf("Error getting message deliveries: %v", err)
+		}
 
-	fmt.Printf("Message has %d deliveries\n", len(deliveries))
-	for i, delivery := range deliveries {
-		fmt.Printf("Delivery %d - Status: %s, Details: %s\n", i+1, delivery.Status, delivery.Details)
+		fmt.Printf("Message has %d deliveries\n", len(deliveries))
+		for i, delivery := range deliveries {
+			fmt.Printf("Delivery %d - Status: %s, Details: %s\n", i+1, delivery.Status, delivery.Details)
+		}
 	}
 }

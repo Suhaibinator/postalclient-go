@@ -84,11 +84,23 @@ type SendRawRequest struct {
 // SendMessageResponse represents a response from sending a message.
 // This structure is returned by both SendMessage and SendRaw methods.
 type SendMessageResponse struct {
-	// MessageID is the unique identifier for the sent message.
-	// This can be used to retrieve message details later.
-	MessageID int `json:"message_id"`
+	// MessageID is the RFC 5322 Message-ID of the sent message, without angle
+	// brackets, e.g. "3f2c...-...@psrp.example.com". For SendRaw it is taken
+	// from the raw message's Message-ID header and is empty if it has none.
+	// It is not the numeric ID that GetMessage takes; see Messages for that.
+	MessageID string `json:"message_id"`
 
-	// Token is a unique token that can be used to reference the message.
-	// This is an alternative to using the MessageID.
+	// Messages maps each recipient address to the message Postal created for
+	// it. Postal stores one message per recipient, and its numeric ID is the
+	// one GetMessage and GetMessageDeliveries take.
+	Messages map[string]RecipientMessage `json:"messages"`
+}
+
+// RecipientMessage identifies the message Postal created for one recipient.
+type RecipientMessage struct {
+	// ID is the numeric message ID, for use with GetMessage and GetMessageDeliveries.
+	ID int `json:"id"`
+
+	// Token is the message's unique token.
 	Token string `json:"token"`
 }
